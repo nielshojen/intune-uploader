@@ -414,6 +414,11 @@ class IntuneAppUploader(IntuneUploaderBase):
                         "displayName": (app_displayname, current_app_data.get("displayName")),
                         "owner": (app_owner, current_app_data.get("owner")),
                     }
+                    if app_icon:
+                        metadata_fields["largeIcon"] = (
+                            app_data.largeIcon,
+                            current_app_data.get("largeIcon"),
+                        )
                     metadata_patch = {}
                     for fname, (desired, current) in metadata_fields.items():
                         desired = desired or ""
