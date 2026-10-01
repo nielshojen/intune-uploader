@@ -6,7 +6,7 @@
 	<string>Recipe stub for any Shared Processors in this directory.
     </string>
 	<key>Identifier</key>
-	<string>com.github.almenscorner.intune-upload.processors</string>
+	<string>com.github.nielshojen.intune-upload.processors</string>
 	<key>Input</key>
 	<dict/>
 	<key>MinimumVersion</key>
