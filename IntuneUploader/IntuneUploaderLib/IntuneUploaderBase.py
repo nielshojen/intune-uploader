@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 
 import requests
@@ -631,6 +632,12 @@ class IntuneUploaderBase(Processor):
 
         return created_categories
 
+    @staticmethod
+    def version_key(version) -> tuple:
+        """Sort key for a version string: its numbers, compared as numbers, so
+        "26.1007" sorts after "26.930" and "10.0" after "9.5"."""
+        return tuple(int(n) for n in re.findall(r"\d+", str(version or "")))
+
     def get_current_app(self, displayname: str, version: int, odata_type: str) -> tuple:
         """Gets the current app from Intune.
 
@@ -654,19 +661,21 @@ class IntuneUploaderBase(Processor):
 
         if request:
             for item in request:
-                item_version = (
-                    item.get("primaryBundleVersion")
-                    if item.get("primaryBundleVersion")
-                    else item.get("buildNumber")
-                )
-                if item_version < version:
-                    result = "update"
-                    item["primaryBundleVersion"] = item_version
-                    data = item
-                else:
-                    result = "current"
-                    item["primaryBundleVersion"] = item_version
-                    data = item
+                item["primaryBundleVersion"] = item.get(
+                    "primaryBundleVersion"
+                ) or item.get("buildNumber")
+            # Compare against the newest matching app, as versions (not
+            # strings, and not whichever app the API happened to list last).
+            data = max(
+                request,
+                key=lambda item: self.version_key(item["primaryBundleVersion"]),
+            )
+            if self.version_key(data["primaryBundleVersion"]) < self.version_key(
+                version
+            ):
+                result = "update"
+            else:
+                result = "current"
 
         return result, data
 

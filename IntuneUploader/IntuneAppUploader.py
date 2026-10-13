@@ -323,10 +323,6 @@ class IntuneAppUploader(IntuneUploaderBase):
                 "value": self.encode_icon(app_icon),
             }
 
-        else:
-            # Don't send an empty largeIcon, it would clear the existing icon on PATCH
-            del app_data.largeIcon
-
         if app_scope_tags:
             app_data.roleScopeTagIds = app_scope_tags
 
@@ -419,21 +415,6 @@ class IntuneAppUploader(IntuneUploaderBase):
                         "owner": (app_owner, current_app_data.get("owner")),
                     }
                     metadata_patch = {}
-                    if app_icon:
-                        # The list endpoint doesn't return the icon, so fetch it from the app itself
-                        current_icon = (
-                            self.makeapirequest(
-                                f'{self.BASE_ENDPOINT}/{current_app_data["id"]}',
-                                self.token,
-                                q_param={"$select": "largeIcon"},
-                            ).get("largeIcon")
-                            or {}
-                        )
-                        if current_icon.get("value") != app_data.largeIcon["value"]:
-                            metadata_patch["largeIcon"] = app_data.largeIcon
-                            self.output(f'{current_app_data["displayName"]}: largeIcon updated')
-                        else:
-                            self.output(f'{current_app_data["displayName"]}: largeIcon already up to date')
                     for fname, (desired, current) in metadata_fields.items():
                         desired = desired or ""
                         if desired != (current or ""):

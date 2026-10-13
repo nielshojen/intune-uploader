@@ -89,7 +89,11 @@ class IntuneAppCleaner(IntuneUploaderBase):
             )
         )
         # Get a sorted list of apps by version
-        apps = sorted(apps, key=lambda app: app["primaryBundleVersion"], reverse=True)
+        apps = sorted(
+            apps,
+            key=lambda app: self.version_key(app["primaryBundleVersion"]),
+            reverse=True,
+        )
 
         # If the number of apps is greater than the keep version count, remove the apps that should be kept
         if len(apps) > keep_versions:

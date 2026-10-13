@@ -164,7 +164,9 @@ class IntuneAppPromoter(IntuneUploaderBase):
                 self.output(
                     f"{intune_app.get('displayName')} {app_version} is already assigned to all groups, skipping."
                 )
-                return None
+                # the next matching app (another version) may still need
+                # promoting
+                continue
 
             # If app has not been promoted before, assign to first group in promotion_info
             if not intune_app.get("notes"):
@@ -176,9 +178,10 @@ class IntuneAppPromoter(IntuneUploaderBase):
                 promote_date = notes_data.get("promotion_date")
                 delta = (date - datetime.strptime(promote_date, "%Y-%m-%d")).days
                 previous_ring = notes_data.get("ring")
+                # a ring without days (typically the last one) counts as 0
                 previous_ring_days = sum(
                     [
-                        group.get("days")
+                        group.get("days") or 0
                         for group in promotion_info
                         if group.get("ring") == previous_ring
                     ]
