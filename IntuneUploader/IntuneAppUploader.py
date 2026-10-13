@@ -349,15 +349,12 @@ class IntuneAppUploader(IntuneUploaderBase):
                 )
                 self.create_app_categories(categories_to_create)
 
-        # If the ignore_current_app variable is set to true, create the app regardless of whether it already exists
-        if ignore_current_app and not current_app_data:
-            raise ProcessorError(
-                "App not found in Intune. Please set ignore_current_app to false."
-            )
-        if (
-            ignore_current_app
-            and app_bundleVersion != current_app_data["primaryBundleVersion"]
-        ):
+        # If the ignore_current_app variable is set to true, create a new app for
+        # a version newer than any in Intune, rather than updating the existing
+        # app. The first version (no app yet) is created further down, as
+        # without ignore_current_app; the same or an older version is "up to
+        # date".
+        if ignore_current_app and current_app_result == "update":
             self.output(
                 f"Creating app {app_data.displayName} version {app_bundleVersion}"
             )

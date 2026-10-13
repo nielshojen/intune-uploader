@@ -87,6 +87,7 @@ class IntuneAppPromoter(IntuneUploaderBase):
                 204,
             )
             promotions.append({"version": app_version, "ring": group.get("ring")})
+            assigned_groups[intune_app["id"]].add(group.get("group_id"))
 
         # Get access token
         self.token = self.obtain_accesstoken(
@@ -126,6 +127,37 @@ class IntuneAppPromoter(IntuneUploaderBase):
             # If no match, return False
             return False
 
+        def version(intune_app):
+            return intune_app.get("primaryBundleVersion") or intune_app.get(
+                "buildNumber"
+            )
+
+        def blacklisted(intune_app):
+            return app_blacklist_versions is not None and match_version(
+                version(intune_app), app_blacklist_versions
+            )
+
+        # Get all promotion group ids
+        promotion_ids = [
+            group.get("group_id") for group in promotion_info if group.get("group_id")
+        ]
+
+        # Only the newest version is promoted through the rings: once a newer
+        # version exists, older ones stay where they are, and lose their ring
+        # assignments once the newest has every ring (see below).
+        candidates = [a for a in intune_apps if not blacklisted(a)]
+        newest = (
+            max(candidates, key=lambda a: self.version_key(version(a)))
+            if candidates
+            else None
+        )
+
+        # each app's ring assignments as they stand, kept up to date as
+        # promote_app() assigns more
+        assigned_groups = {}
+        ring_assignments = {}
+        retired = []
+
         for intune_app in intune_apps:
             self.request = intune_app
 
@@ -140,25 +172,27 @@ class IntuneAppPromoter(IntuneUploaderBase):
                 for c in assignments["value"]
                 if c["target"].get("groupId")
             ]
-
-            def version(intune_app):
-                return intune_app.get("primaryBundleVersion") or intune_app.get(
-                    "buildNumber"
-                )
+            assigned_groups[intune_app["id"]] = set(current_group_ids)
+            ring_assignments[intune_app["id"]] = [
+                c
+                for c in assignments["value"]
+                if c["target"].get("groupId") in promotion_ids
+            ]
 
             app_version = version(intune_app)
             app = App(app_name, app_version)
 
-            if app_blacklist_versions is not None and (
-                match_version(version(intune_app), app_blacklist_versions)
-                or match_version(version(intune_app), app_blacklist_versions)
-            ):
+            if blacklisted(intune_app):
                 self.output(
                     f"App version {version(intune_app)} is blacklisted, skipping version."
                 )
                 continue
-            # Get all promotion group ids
-            promotion_ids = [group.get("group_id") for group in promotion_info]
+            if intune_app is not newest:
+                self.output(
+                    f"{intune_app.get('displayName')} {app_version} is older than "
+                    f"{version(newest)}, not promoting it."
+                )
+                continue
             # If all promotion group ids are in current group ids, exits
             if all(id in current_group_ids for id in promotion_ids):
                 self.output(
@@ -196,11 +230,42 @@ class IntuneAppPromoter(IntuneUploaderBase):
                         promote_app(group)
                         break
 
+        # Once the newest version has every ring (it reached the last one),
+        # older versions are no longer assigned to the rings. Other
+        # assignments they have (e.g. uninstall) are left alone.
+        if newest and promotion_ids and set(promotion_ids) <= assigned_groups.get(
+            newest["id"], set()
+        ):
+            newest_key = self.version_key(version(newest))
+            for intune_app in intune_apps:
+                if self.version_key(version(intune_app)) >= newest_key:
+                    continue
+                for assignment in ring_assignments.get(intune_app["id"], []):
+                    self.makeapirequestDelete(
+                        f"{self.BASE_ENDPOINT}/{intune_app['id']}/assignments/"
+                        f"{assignment['id']}",
+                        self.token,
+                        status_code=204,
+                    )
+                if ring_assignments.get(intune_app["id"]):
+                    self.output(
+                        f"{intune_app.get('displayName')} {version(intune_app)}: "
+                        f"removed its ring assignments, {version(newest)} has "
+                        "every ring."
+                    )
+                    retired.append(version(intune_app))
+
         self.env["intuneapppromoter_summary_result"] = {
             "summary_text": "Summary of IntuneAppPromoter results:",
-            "report_fields": ["app name", "promotions", "blacklisted versions"],
+            "report_fields": [
+                "app name",
+                "promotions",
+                "retired versions",
+                "blacklisted versions",
+            ],
             "data": {
                 "app name": app_name,
+                "retired versions": ", ".join(retired),
                 "promotions": (
                     ", ".join(
                         [

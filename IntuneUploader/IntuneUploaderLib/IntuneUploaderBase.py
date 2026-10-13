@@ -335,7 +335,11 @@ class IntuneUploaderBase(Processor):
             )
         else:
             response = requests.delete(deleteEndpoint, headers=headers, data=jdata)
-        if response.status_code == status_code:
+        # Graph answers a successful DELETE with 200 or 204 (No Content)
+        # depending on the resource, so either counts as success.
+        if response.status_code == status_code or (
+            status_code in (200, 204) and response.status_code in (200, 204)
+        ):
             pass
         else:
             raise ProcessorError(
