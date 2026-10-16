@@ -55,7 +55,7 @@ class IntuneScriptUploader(IntuneUploaderBase):
         },
         "assignment_info": {
             "required": False,
-            "description": "The assignment info of the app. Provided as an array of dicts containing keys 'group_id' and 'intent'. See https://github.com/almenscorner/intune-uploader/wiki/IntuneScriptUploader#input-variables for more information.",
+            "description": "The assignment info of the app. Provided as an array of dicts containing keys 'group_id' (or 'all_assignment': AllDevices / AllUsers) and 'intent'. See https://github.com/almenscorner/intune-uploader/wiki/IntuneScriptUploader#input-variables for more information.",
         },
     }
     output_variables = {
@@ -80,33 +80,39 @@ class IntuneScriptUploader(IntuneUploaderBase):
             current_assignment = self.makeapirequest(
                 f"{assignment_endpoint}/{script_id}/assignments", self.token
             )
-            # Get the current group ids
-            current_group_ids = [
-                c["target"].get("groupId")
+            # What each current assignment targets: its group id, or the
+            # target type for all devices / all users
+            current_targets = [
+                c["target"].get("groupId") or c["target"].get("@odata.type")
                 for c in current_assignment["value"]
-                if c["target"].get("groupId")
             ]
-            # Check if the group id is not in the current assignments
+
+            def target(assignment):
+                if assignment.get("all_assignment"):
+                    odata_type = self._ALL_ASSIGNMENT_MAP.get(
+                        assignment["all_assignment"], assignment["all_assignment"]
+                    )
+                    return {"@odata.type": odata_type}
+                if assignment.get("intent") == "exclude":
+                    odata_type = "#microsoft.graph.exclusionGroupAssignmentTarget"
+                else:
+                    odata_type = "#microsoft.graph.groupAssignmentTarget"
+                return {"@odata.type": odata_type, "groupId": assignment["group_id"]}
+
+            # Check if the target is not in the current assignments
             missing_assignment = [
-                a for a in assignment_info if a["group_id"] not in current_group_ids
+                a
+                for a in assignment_info
+                if (target(a).get("groupId") or target(a)["@odata.type"])
+                not in current_targets
             ]
             data = {"deviceManagementScriptAssignments": []}
 
             if missing_assignment:
                 for assignment in missing_assignment:
-                    if assignment["intent"] == "exclude":
-                        atype = "#microsoft.graph.exclusionGroupAssignmentTarget"
-                    else:
-                        atype = "#microsoft.graph.groupAssignmentTarget"
-
-                    # Assign the script to the group
+                    # Assign the script to the group (or all devices / users)
                     data["deviceManagementScriptAssignments"].append(
-                        {
-                            "target": {
-                                "@odata.type": atype,
-                                "groupId": assignment["group_id"],
-                            },
-                        }
+                        {"target": target(assignment)}
                     )
 
                 for assignment in current_assignment["value"]:

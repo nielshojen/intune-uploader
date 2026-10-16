@@ -157,3 +157,10 @@ site/
 .jekyll-cache/
 
 _site/
+
+
+# Agents
+.agents
+.claude
+CLAUDE.md
+skills-lock.json
